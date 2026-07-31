@@ -1,0 +1,367 @@
+using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.Audio;
+
+public class MleeRobot1Controller : MonoBehaviour
+{
+    private bool chasing;
+
+    public float distanceToChase = 5f;
+    public float distanceToLose = 7f;
+    public float attackRange = 1.2f;
+
+    private Vector3 targetPoint;
+    private Vector3 originalPoint;
+
+    public NavMeshAgent agent;
+
+    public float keepChasingTime = 5f;
+    private float chaseCounter;
+
+    public Animator anim;
+
+    private bool hasSpottedPlayer = false;
+
+    [Header("Audio")]
+    AudioSource AS;
+
+    public AudioClip spottedSound;
+    public AudioClip robotkickSound;
+    public AudioClip robotpunchSound;
+    public AudioClip[] footstepSounds;
+    public AudioClip robotgothitSound;
+
+    private float footstepTimer;
+    public float footstepDelay = 0.45f;
+
+    [Header("Line of Sight")]
+    public LayerMask obstacleMask; // Слой стен и препятствий, которые блокируют обзор
+    public float eyeHeight = 1f;   // Высота глаз робота
+
+    [Header("Attack Settings")]
+    public float attackCooldown = 2f;
+    private float attackTimer;
+    private bool isAttacking;
+
+    [Header("Attack Timing")]
+    public float punchDamageDelay = 0.6f;
+    public float kickDamageDelay = 0.8f;
+
+    public float attackDuration = 1.2f;
+    private float attackDurationTimer;
+
+    public int attackDamage = 5;
+
+    void Start()
+    {
+        AS = GetComponent<AudioSource>();
+
+        originalPoint = transform.position;
+    }
+
+    void Update()
+    {
+        if (attackTimer > 0)
+        {
+            attackTimer -= Time.deltaTime;
+        }
+
+        if (!HasLineOfSight())
+        {
+            anim.SetBool("IsMoving", false);
+            return; // Пропускаем весь остальной код атаки/погони в этом кадре
+        }
+
+        if (isAttacking)
+        {
+            // Безопасно меняем параметры агента только если он активен
+            if (agent != null && agent.enabled && agent.isOnNavMesh)
+            {
+                agent.isStopped = true;
+                agent.velocity = Vector3.zero;
+            }
+
+            transform.LookAt(new Vector3(targetPoint.x, transform.position.y, targetPoint.z));
+            anim.SetBool("IsMoving", false);
+
+            return;
+        }
+
+        if (PlayerController.instance == null) return;
+
+        targetPoint = PlayerController.instance.transform.position;
+        targetPoint.y = transform.position.y;
+
+        float distanceToPlayer = Vector3.Distance(transform.position, targetPoint);
+
+        if (chasing)
+        {
+            if (distanceToPlayer > distanceToLose)
+            {
+                chasing = false;
+                EndCombat(); // Потерял игрока — выходим из боя
+                chaseCounter = keepChasingTime;
+                if (agent.enabled && agent.isOnNavMesh) agent.ResetPath();
+            }
+            else
+            {
+                if (distanceToPlayer <= attackRange)
+                {
+                    if (attackTimer <= 0)
+                    {
+                        Attack();
+                    }
+                    else
+                    {
+                        if (agent.enabled && agent.isOnNavMesh)
+                        {
+                            agent.isStopped = true;
+                            agent.velocity = Vector3.zero;
+                        }
+                        transform.LookAt(new Vector3(targetPoint.x, transform.position.y, targetPoint.z));
+                    }
+                }
+                else
+                {
+                    if (agent.enabled && agent.isOnNavMesh)
+                    {
+                        agent.isStopped = false;
+                        agent.SetDestination(targetPoint);
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (distanceToPlayer <= attackRange || distanceToPlayer <= distanceToChase)
+            {
+                chasing = true;
+                StartCombat(); // Заметил и начал погоню — вступаем в бой!
+            }
+            else
+            {
+                if (chaseCounter > 0)
+                {
+                    chaseCounter -= Time.deltaTime;
+                    if (agent.enabled && agent.isOnNavMesh)
+                    {
+                        agent.ResetPath();
+                        agent.isStopped = true;
+                    }
+                }
+                else
+                {
+                    if (agent.enabled && agent.isOnNavMesh)
+                    {
+                        agent.isStopped = false;
+                        agent.SetDestination(originalPoint);
+
+                        if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
+                        {
+                            agent.ResetPath();
+                        }
+                    }
+                }
+            }
+        }
+
+        bool isMoving = agent != null && agent.enabled && agent.isOnNavMesh && !agent.isStopped && agent.velocity.sqrMagnitude > 0.01f;
+        anim.SetBool("IsMoving", isMoving);
+
+        if (isMoving && footstepSounds.Length > 0)
+        {
+            footstepTimer -= Time.deltaTime;
+
+            if (footstepTimer <= 0f)
+            {
+                int index = Random.Range(0, footstepSounds.Length);
+                AS.PlayOneShot(footstepSounds[index], 0.4f);
+
+                footstepTimer = footstepDelay;
+            }
+        }
+        else
+        {
+            footstepTimer = 0f;
+        }
+    }
+
+    bool HasLineOfSight()
+    {
+        if (PlayerController.instance == null) return false;
+
+        Vector3 startPos = transform.position + Vector3.up * eyeHeight;
+        Vector3 endPos = PlayerController.instance.transform.position + Vector3.up * 0.5f;
+
+        RaycastHit hit;
+        if (Physics.Linecast(startPos, endPos, out hit, obstacleMask))
+        {
+            if (!hit.transform.CompareTag("Player"))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void Attack()
+    {
+        transform.LookAt(new Vector3(targetPoint.x, targetPoint.y, targetPoint.z));
+
+        if (attackTimer <= 0 && !isAttacking)
+        {
+            isAttacking = true;
+
+            if (agent != null)
+                agent.enabled = false;
+
+            int attackChoice = Random.Range(0, 2);
+            if (attackChoice == 0)
+            {
+                anim.SetTrigger("Punch");
+                StartCoroutine(DealDamageDelayed(punchDamageDelay));
+            }
+            else
+            {
+                anim.SetTrigger("Kick");
+                StartCoroutine(DealDamageDelayed(kickDamageDelay));
+            }
+
+            attackTimer = attackCooldown;
+            StartCoroutine(FinishAttackRoutine(attackDuration));
+        }
+    }
+
+    public void PlayHitSound()
+    {
+        if (AS != null && robotgothitSound != null)
+        {
+            AS.PlayOneShot(robotgothitSound, 1.2f);
+        }
+    }
+    private System.Collections.IEnumerator DealDamageDelayed(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+
+        if (PlayerController.instance == null) yield break;
+
+        Vector3 flatEnemyPos = new Vector3(transform.position.x, 0, transform.position.z);
+        Vector3 flatPlayerPos = new Vector3(PlayerController.instance.transform.position.x, 0, PlayerController.instance.transform.position.z);
+        float distance = Vector3.Distance(flatEnemyPos, flatPlayerPos);
+
+        if (distance <= attackRange + 0.5f)
+        {
+            IDamagable player = PlayerController.instance.GetComponentInChildren<IDamagable>();
+
+            if (player != null)
+            {
+                player.TakeDamage(attackDamage, true);
+                Debug.Log("✅ УРОН УСПЕШНО НАНЕСЕН ИГРОКУ!");
+            }
+            else
+            {
+                Debug.LogError("❌ ОШИБКА: У объекта игрока нет компонента с интерфейсом IDamagable!");
+            }
+        }
+    }
+
+    private System.Collections.IEnumerator FinishAttackRoutine(float duration)
+    {
+        yield return new WaitForSeconds(duration);
+
+        isAttacking = false;
+
+        if (agent != null && gameObject.activeSelf)
+        {
+            agent.enabled = true;
+        }
+    }
+
+    public void StunByHit(float stunDuration)
+    {
+        if (robotgothitSound != null)
+        {
+            AS.PlayOneShot(robotgothitSound, 1f);
+        }
+
+        // При получении урона/стана гарантированно вступаем в бой
+        chasing = true;
+        StartCombat();
+
+        StartCoroutine(HitStunRoutine(stunDuration));
+    }
+
+    private System.Collections.IEnumerator HitStunRoutine(float duration)
+    {
+        isAttacking = true;
+
+        if (agent != null)
+        {
+            agent.enabled = false;
+        }
+
+        anim.SetBool("IsMoving", false);
+
+        yield return new WaitForSeconds(duration);
+
+        if (agent != null && gameObject.activeSelf)
+        {
+            agent.enabled = true;
+        }
+        isAttacking = false;
+    }
+
+    // ========================================================================
+    // ЛОГИКА СВЯЗИ С COMBAT MANAGER
+    // ========================================================================
+
+    private void StartCombat()
+    {
+        if (!hasSpottedPlayer)
+        {
+            hasSpottedPlayer = true;
+
+            if (spottedSound != null)
+            {
+                AS.PlayOneShot(spottedSound, 2f);
+            }
+
+            if (CombatManager.instance != null)
+            {
+                CombatManager.instance.RegisterEnemy();
+            }
+        }
+    }
+
+    private void EndCombat()
+    {
+        if (hasSpottedPlayer)
+        {
+            hasSpottedPlayer = false;
+            if (CombatManager.instance != null)
+            {
+                CombatManager.instance.UnregisterEnemy();
+            }
+        }
+    }
+
+    private void OnDisable()
+    {
+        EndCombat();
+    }
+
+    private void OnDestroy()
+    {
+        EndCombat();
+    }
+
+    public void PlayPunchSound()
+    {
+        AS.PlayOneShot(robotpunchSound, 2f);
+    }
+
+    public void PlayKickSound()
+    {
+        AS.PlayOneShot(robotkickSound, 3f);
+    }
+}
