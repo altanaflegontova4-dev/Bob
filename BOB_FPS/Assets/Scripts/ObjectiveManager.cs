@@ -9,6 +9,14 @@ public class ObjectiveManager : MonoBehaviour
     public int requiredNotes = 4;
 
     public bool survivorRescued = false;
+    public enum ObjectiveType
+    {
+        CollectNotes,
+        DestroyNodes
+    }
+
+    [Header("Level Objective")]
+    public ObjectiveType objectiveType;
 
     [Header("Progress")]
     public int nodesDestroyed = 0;
@@ -25,29 +33,31 @@ public class ObjectiveManager : MonoBehaviour
 
     void Start()
     {
-        //Show current objective
-        UpdateObjectiveUI();
+        if (objectiveType == ObjectiveType.CollectNotes)
+        {
+            UIController.instance.UpdateObjective(
+                "Collect 4 Scraped Notes and Rescue the Survivor"
+            );
+        }
+        else if (objectiveType == ObjectiveType.DestroyNodes)
+        {
+            UpdateObjectiveUI();
+        }
     }
 
     public void NodeDestroyed()
     {
+        if (objectiveType != ObjectiveType.DestroyNodes)
+            return;
+
         nodesDestroyed++;
 
-        // Check progression
-        if (nodesDestroyed >= totalNodes)//if all nodes done
+        if (nodesDestroyed >= totalNodes)
         {
-            // Сообщение по центру/сбоку
-            if (UIController.instance != null)
-            {
-                UIController.instance.ShowMessage("All nodes destroyed! The Overseer is weakened.");
-
-                // Change objective
-                UIController.instance.UpdateObjective(completedObjectiveText);
-            }
-
-     
+            UIController.instance.ShowMessage("All nodes destroyed! The Overseer is weakened.");
+            UIController.instance.UpdateObjective(completedObjectiveText);
         }
-        else //if not all nodes doen
+        else
         {
             UpdateObjectiveUI();
         }
@@ -55,11 +65,12 @@ public class ObjectiveManager : MonoBehaviour
 
     private void UpdateObjectiveUI()
     {
-        if (UIController.instance != null)
-        {
-            string fullObjective = initialObjectiveText + " (" + nodesDestroyed + "/" + totalNodes + ")";
-            UIController.instance.UpdateObjective(fullObjective);
-        }
+        if (objectiveType != ObjectiveType.DestroyNodes)
+            return;
+
+        string fullObjective = "Destroy Network Nodes (" + nodesDestroyed + "/" + totalNodes + ")";
+
+        UIController.instance.UpdateObjective(fullObjective);
     }
 
     public bool CanExit()
@@ -69,27 +80,37 @@ public class ObjectiveManager : MonoBehaviour
 
     public void CollectNote()
     {
+        if (objectiveType != ObjectiveType.CollectNotes)
+            return;
+
         notesCollected++;
 
         UIController.instance.ShowMessage("Scraped Notes: " + notesCollected + "/" + requiredNotes);
 
-        if (notesCollected >= requiredNotes && survivorRescued)
-        {
-            exitDoor.Unlock();
-        }
+        CheckLevel2Complete();
     }
 
     public void RescueSurvivor()
     {
+        if (objectiveType != ObjectiveType.CollectNotes)
+            return;
+
         survivorRescued = true;
 
         UIController.instance.ShowMessage("Survivor rescued!");
 
-        if (notesCollected >= requiredNotes)
+        CheckLevel2Complete();
+    }
+
+    private void CheckLevel2Complete()
+    {
+        if (notesCollected >= requiredNotes && survivorRescued)
         {
+            UIController.instance.ShowMessage("Objectives complete! Proceed to the exit.");
+            UIController.instance.UpdateObjective("Go to the Exit");
+
             exitDoor.Unlock();
         }
     }
-
 
 }

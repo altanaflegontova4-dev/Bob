@@ -19,6 +19,10 @@ public class CutsceneManager : MonoBehaviour
     public float fadeSpeed = 2f;
     public CanvasGroup fadePanel;
 
+    [Header("Scene Indices")]
+    public int introSceneIndex = 0; // сцена где играет интро
+    public int outroSceneIndex = 2; // сцена где играет аутро
+
     void Awake()
     {
         instance = this;
@@ -26,43 +30,48 @@ public class CutsceneManager : MonoBehaviour
 
     void Start()
     {
-        // играем вступительную катсцену при старте
-        StartCoroutine(PlayIntro());
+        int currentScene = SceneManager.GetActiveScene().buildIndex;
+
+        // играем интро только на первой сцене
+        if (currentScene == introSceneIndex && introCutscene != null)
+        {
+            StartCoroutine(PlayIntro());
+        }
     }
 
-    // вступительная катсцена
+    public void PlayOutro()
+    {
+        int currentScene = SceneManager.GetActiveScene().buildIndex;
+
+        // играем аутро только на третьей сцене
+        if (currentScene == outroSceneIndex && outroCutscene != null)
+        {
+            StartCoroutine(PlayOutroSequence());
+        }
+    }
+
     IEnumerator PlayIntro()
     {
-        // блокируем игрока
         if (PlayerController.instance != null)
             PlayerController.instance.enabled = false;
 
         yield return StartCoroutine(PlayCutscene(introCutscene));
 
-        // разблокируем игрока
         if (PlayerController.instance != null)
             PlayerController.instance.enabled = true;
     }
 
-    // финальная катсцена — вызывается когда босс умирает
-    public void PlayOutro()
-    {
-        StartCoroutine(PlayOutroSequence());
-    }
-
     IEnumerator PlayOutroSequence()
     {
-        // блокируем игрока
         if (PlayerController.instance != null)
             PlayerController.instance.enabled = false;
 
         yield return StartCoroutine(PlayCutscene(outroCutscene));
 
-        // после финальной катсцены загружаем главное меню
+        // после аутро загружаем главное меню
         SceneManager.LoadScene("MainMenu");
     }
 
-    // общий метод воспроизведения
     IEnumerator PlayCutscene(VideoClip clip)
     {
         if (clip == null || cutscenePlayer == null) yield break;
@@ -81,22 +90,16 @@ public class CutsceneManager : MonoBehaviour
             }
         }
 
-        // ставим клип
         cutscenePlayer.clip = clip;
         cutscenePlayer.Prepare();
 
-        // ждём пока видео подготовится
         while (!cutscenePlayer.isPrepared)
-        {
             yield return null;
-        }
 
         cutscenePlayer.Play();
 
-        // небольшая задержка чтобы isPlaying успел стать true
         yield return new WaitForSeconds(0.5f);
 
-        // ждём окончания
         while (cutscenePlayer.isPlaying)
         {
             if (Input.GetKeyDown(KeyCode.E))
@@ -107,7 +110,6 @@ public class CutsceneManager : MonoBehaviour
             yield return null;
         }
 
-        // скрываем панель
         if (cutscenePanel != null)
             cutscenePanel.SetActive(false);
 
