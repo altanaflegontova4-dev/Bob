@@ -28,15 +28,6 @@ public class Door : MonoBehaviour, IInteractable
 
     public string GetPromptText()
     {
-        if (isExitDoorLvl2)
-        {
-            if (ObjectiveManager.instance.notesCollected < ObjectiveManager.instance.requiredNotes)
-                return $"Need {ScrapNoteManager.instance.requiredNotes} Scraped Notes and rescue a Survivor.";
-
-            if (!ObjectiveManager.instance.survivorRescued)
-                return "Rescue the survivor first.";
-        }
-
         return "Press E to open door";
     }
 

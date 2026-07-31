@@ -20,12 +20,7 @@ public class ScrapNoteManager : MonoBehaviour
 
     public void CollectScrapNote()
     {
-        collectedNotes++;
-
-        UIController.instance.ShowMessage(
-            "Scraped Notes: " + collectedNotes + "/" + requiredNotes);
-
-        if (collectedNotes >= requiredNotes)
+        if (ObjectiveManager.instance.notesCollected >= ObjectiveManager.instance.requiredNotes)
         {
             UIController.instance.ShowMessage(
                 "You found all Scraped Notes. Rescue the survivor to unlock the door.");
